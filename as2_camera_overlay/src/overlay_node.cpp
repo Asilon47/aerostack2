@@ -37,8 +37,10 @@
 #include <OgreSceneManager.h>
 #include <OgreSceneNode.h>
 #include <cv_bridge/cv_bridge.h>
-#include <yaml-cpp/yaml.h>
+#include <rviz_common/config.hpp>
+#include <rviz_common/yaml_config_reader.hpp>
 #include <QCoreApplication>
+#include <QString>
 
 #include <algorithm>
 #include <chrono>
@@ -93,6 +95,7 @@ void OverlayNode::declareParameters()
     1.0f);
   max_render_fps_ =
     std::max(0.0, getOrDeclare<double>(this, "max_render_fps", 0.0));
+  getOrDeclareStr(this, "rviz_config_path", "");
 }
 
 rcl_interfaces::msg::SetParametersResult OverlayNode::onParameterChange(
@@ -131,26 +134,40 @@ void OverlayNode::loadDisplays()
     renderer_->sceneManager(), tf_buffer_, shared_from_this(), fixed_frame_);
   display_loader_ =
     std::make_unique<DisplayLoader>(display_context_.get(), get_logger());
-  std::string displays_yaml_str = getOrDeclareStr(this, "displays_yaml", "[]");
-  try {
-    YAML::Node root = YAML::Load(displays_yaml_str);
-    if (root.IsSequence()) {
-      for (const auto & entry : root) {
-        DisplayConfig cfg;
-        cfg.class_id = entry["class"].as<std::string>("");
-        cfg.name = entry["name"].as<std::string>("");
-        if (cfg.class_id.empty()) {
-          RCLCPP_WARN(
-            get_logger(),
-            "Display entry missing 'class' key — skipping.");
-          continue;
-        }
-        YAML::Node props = entry["properties"];
-        display_loader_->loadDisplay(cfg, props);
-      }
+
+  std::string rviz_config_path = getOrDeclareStr(this, "rviz_config_path", "");
+  if (rviz_config_path.empty()) {
+    RCLCPP_INFO(get_logger(), "No RViz config path provided. No displays loaded.");
+    return;
+  }
+
+  rviz_common::YamlConfigReader reader;
+  rviz_common::Config root_config;
+  reader.readFile(root_config, QString::fromStdString(rviz_config_path));
+  if (reader.error()) {
+    RCLCPP_ERROR(
+      get_logger(), "Failed to load RViz config '%s': %s",
+      rviz_config_path.c_str(), reader.errorMessage().toStdString().c_str());
+    return;
+  }
+
+  rviz_common::Config viz_manager_config = root_config.mapGetChild("Visualization Manager");
+  if (!viz_manager_config.isValid()) {
+    RCLCPP_ERROR(get_logger(), "RViz config missing 'Visualization Manager' section.");
+    return;
+  }
+
+  rviz_common::Config displays_config = viz_manager_config.mapGetChild("Displays");
+  if (!displays_config.isValid()) {
+    RCLCPP_INFO(get_logger(), "No 'Displays' found in RViz config.");
+    return;
+  }
+
+  for (int i = 0; i < displays_config.listLength(); ++i) {
+    rviz_common::Config display_config = displays_config.listGetItem(i);
+    if (display_config.isValid()) {
+      display_loader_->loadDisplay(display_config);
     }
-  } catch (const YAML::Exception & e) {
-    RCLCPP_ERROR(get_logger(), "Failed to parse displays_yaml: %s", e.what());
   }
 }
 

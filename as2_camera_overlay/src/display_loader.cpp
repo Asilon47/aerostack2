@@ -35,8 +35,6 @@
 
 #include "display_loader.hpp"
 
-#include <yaml-cpp/yaml.h>
-
 #include <QColor>
 #include <QString>
 #include <QVariant>
@@ -64,25 +62,6 @@ const std::set<std::string> kExcluded{
   "rviz_default_plugins/Camera",
   "rviz_default_plugins/Image",
 };
-
-QVariant yamlToVariant(const YAML::Node & node, const std::string & prop_class)
-{
-  if (prop_class == "rviz_common::properties::BoolProperty") {
-    return QVariant(node.as<bool>());
-  }
-  if (prop_class == "rviz_common::properties::IntProperty") {
-    return QVariant(node.as<int>());
-  }
-  if (prop_class == "rviz_common::properties::FloatProperty") {
-    return QVariant(node.as<double>());
-  }
-  if (prop_class == "rviz_common::properties::ColorProperty") {
-    auto str = node.as<std::string>();
-    auto c = rviz_common::properties::parseColor(QString::fromStdString(str));
-    return QVariant(c);
-  }
-  return QVariant(QString::fromStdString(node.as<std::string>()));
-}
 }  // namespace
 
 DisplayLoader::DisplayLoader(
@@ -108,48 +87,43 @@ bool DisplayLoader::isExcluded(const std::string & class_id)
   return kExcluded.count(class_id) > 0;
 }
 
-bool DisplayLoader::loadDisplay(
-  const DisplayConfig & cfg,
-  const YAML::Node & props)
+bool DisplayLoader::loadDisplay(const rviz_common::Config & config)
 {
-  if (isExcluded(cfg.class_id)) {
+  QString class_id;
+  if (!config.mapGetString("Class", &class_id)) {
+    RCLCPP_ERROR(logger_, "Display configuration missing 'Class' key.");
+    return false;
+  }
+
+  std::string class_id_std = class_id.toStdString();
+  if (isExcluded(class_id_std)) {
     RCLCPP_ERROR(
       logger_,
       "Display '%s' requires a screen and is not supported.",
-      cfg.class_id.c_str());
+      class_id_std.c_str());
     return false;
   }
+
   std::shared_ptr<rviz_common::Display> display;
   try {
-    display = loader_->createSharedInstance(cfg.class_id);
+    display = loader_->createSharedInstance(class_id_std);
   } catch (const pluginlib::PluginlibException & e) {
     RCLCPP_ERROR(
       logger_, "Failed to load plugin '%s': %s",
-      cfg.class_id.c_str(), e.what());
+      class_id_std.c_str(), e.what());
     return false;
   }
-  display->setClassId(QString::fromStdString(cfg.class_id));
-  display->setName(
-    QString::fromStdString(cfg.name.empty() ? cfg.class_id : cfg.name));
+
   try {
     display->initialize(context_);
+    display->load(config);
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(logger_, "Plugin initialization failed: %s", e.what());
+    RCLCPP_ERROR(logger_, "Plugin initialization/load failed: %s", e.what());
     return false;
   }
-  if (props.IsMap()) {
-    applyProperties(display.get(), props, logger_);
-  }
-  try {
-    display->setEnabled(true);
-  } catch (...) {
-    RCLCPP_ERROR(
-      logger_, "Failed to enable plugin '%s'.",
-      cfg.class_id.c_str());
-    return false;
-  }
+
   displays_.push_back(std::move(display));
-  RCLCPP_INFO(logger_, "Loaded RViz plugin: %s", cfg.class_id.c_str());
+  RCLCPP_INFO(logger_, "Loaded RViz plugin: %s", class_id_std.c_str());
   return true;
 }
 
@@ -162,40 +136,6 @@ void DisplayLoader::updateAll(float wall_dt, float ros_dt)
     try {
       d->update(wall_dt, ros_dt);
     } catch (...) {
-    }
-  }
-}
-
-void DisplayLoader::applyProperties(
-  rviz_common::properties::Property * prop,
-  const YAML::Node & yaml_map,
-  const rclcpp::Logger & logger)
-{
-  for (const auto & kv : yaml_map) {
-    if (!kv.first.IsScalar()) {
-      continue;
-    }
-    const std::string key = kv.first.as<std::string>();
-    auto * child = prop->subProp(QString::fromStdString(key));
-    if (child == prop) {
-      RCLCPP_WARN(logger, "Plugin property '%s' not found.", key.c_str());
-      continue;
-    }
-    const YAML::Node & val = kv.second;
-    if (val.IsMap()) {
-      applyProperties(child, val, logger);
-      continue;
-    }
-    if (!val.IsScalar()) {
-      continue;
-    }
-    const std::string prop_class = child->metaObject()->className();
-    try {
-      child->setValue(yamlToVariant(val, prop_class));
-    } catch (const std::exception & e) {
-      RCLCPP_WARN(
-        logger, "Failed to set property '%s': %s", key.c_str(),
-        e.what());
     }
   }
 }

@@ -41,23 +41,13 @@
 
 #include <pluginlib/class_loader.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <rviz_common/config.hpp>
 #include <rviz_common/display.hpp>
 
 #include "headless_rviz.hpp"
 
-namespace YAML
-{
-class Node;
-}  // namespace YAML
-
 namespace as2_camera_overlay
 {
-struct DisplayConfig
-{
-  std::string class_id;
-  std::string name;
-};
-
 class DisplayLoader
 {
 public:
@@ -65,16 +55,12 @@ public:
     HeadlessDisplayContext * context,
     rclcpp::Logger logger);
   ~DisplayLoader();
-  bool loadDisplay(const DisplayConfig & cfg, const YAML::Node & properties);
+  bool loadDisplay(const rviz_common::Config & config);
   void updateAll(float wall_dt, float ros_dt);
   size_t size() const {return displays_.size();}
 
 private:
   static bool isExcluded(const std::string & class_id);
-  static void applyProperties(
-    rviz_common::properties::Property * prop,
-    const YAML::Node & yaml_map,
-    const rclcpp::Logger & logger);
   HeadlessDisplayContext * context_;
   rclcpp::Logger logger_;
   std::unique_ptr<pluginlib::ClassLoader<rviz_common::Display>> loader_;

@@ -41,6 +41,13 @@ def generate_launch_description():
             'defaults.yaml',
         ]
     )
+    default_rviz_config = PathJoinSubstitution(
+        [
+            FindPackageShare('as2_camera_overlay'),
+            'config',
+            'displays.rviz',
+        ]
+    )
 
     return LaunchDescription(
         [
@@ -50,6 +57,11 @@ def generate_launch_description():
                 description='Path to parameters YAML file.',
             ),
             DeclareLaunchArgument(
+                'rviz_config',
+                default_value=default_rviz_config,
+                description='Path to RViz configuration file.',
+            ),
+            DeclareLaunchArgument(
                 'name', default_value='as2_camera_overlay', description='Node name.'
             ),
             Node(
@@ -57,7 +69,10 @@ def generate_launch_description():
                 executable='as2_camera_overlay_node',
                 name=LaunchConfiguration('name'),
                 output='screen',
-                parameters=[LaunchConfiguration('config')],
+                parameters=[
+                    LaunchConfiguration('config'),
+                    {'rviz_config_path': LaunchConfiguration('rviz_config')},
+                ],
                 additional_env={
                     'QT_QPA_PLATFORM': 'offscreen',
                     'LIBGL_ALWAYS_SOFTWARE': '1',

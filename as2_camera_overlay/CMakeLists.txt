@@ -47,7 +47,6 @@ endforeach()
 
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(yaml-cpp REQUIRED)
 
 find_package(Qt5 REQUIRED COMPONENTS Core Widgets Gui)
 
@@ -72,7 +71,6 @@ target_link_libraries(${PROJECT_NAME}_core
     Qt5::Gui
     ${OpenCV_LIBS}
     Eigen3::Eigen
-    yaml-cpp
 )
 ament_target_dependencies(${PROJECT_NAME}_core
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
@@ -94,7 +92,6 @@ target_link_libraries(${PROJECT_NAME}_node
     Qt5::Gui
     ${OpenCV_LIBS}
     Eigen3::Eigen
-    yaml-cpp
 )
 ament_target_dependencies(${PROJECT_NAME}_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
